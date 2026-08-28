@@ -1,5 +1,7 @@
 Flask
-requests 
+requests
 pandas
 openpyxl
 gunicorn
+gspread
+google-auth
