@@ -1,263 +1,180 @@
-import os
-import requests
 import gspread
-
-from flask import Flask, request
 from google.oauth2.service_account import Credentials
-
-app = Flask(__name__)
 
 # =========================================================
 # CONFIGURATION
 # =========================================================
 
-VERIFY_TOKEN = "carparts_test_token"
-
-PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN")
-GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
-
-GOOGLE_CREDENTIALS_FILE = "google_credentials.json"
-
+GOOGLE_SHEET_NAME = "car_parts"
+SHEET1_NAME = "Sheet1"
+SHEET2_NAME = "Sheet2"
+SERVICE_ACCOUNT_FILE = "service_account.json"
 
 # =========================================================
 # GOOGLE SHEETS CONNECTION
 # =========================================================
 
-def get_google_sheet():
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets.readonly"
+]
 
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets.readonly"
-    ]
+credentials = Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE,
+    scopes=SCOPES
+)
 
-    credentials = Credentials.from_service_account_file(
-        GOOGLE_CREDENTIALS_FILE,
-        scopes=scopes
-    )
+client = gspread.authorize(credentials)
 
-    client = gspread.authorize(credentials)
+spreadsheet = client.open(GOOGLE_SHEET_NAME)
 
-    spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
+sheet1 = spreadsheet.worksheet(SHEET1_NAME)
+sheet2 = spreadsheet.worksheet(SHEET2_NAME)
 
-    sheet = spreadsheet.sheet1
+# =========================================================
+# LOAD DATA FROM BOTH SHEETS
+# =========================================================
 
-    return sheet
+parts_data = sheet1.get_all_records()
+tires_data = sheet2.get_all_records()
+
+print(f"Sheet1 records: {len(parts_data)}")
+print(f"Sheet2 records: {len(tires_data)}")
 
 
 # =========================================================
-# SEARCH GOOGLE SHEETS
+# SEARCH INVENTORY
 # =========================================================
 
-def search_parts(search_text):
+def search_inventory(search_text):
 
-    try:
+    search_text = search_text.lower().strip()
 
-        sheet = get_google_sheet()
+    results = []
 
-        rows = sheet.get_all_records()
+    # -----------------------------------------------------
+    # SEARCH SHEET1
+    # -----------------------------------------------------
 
-        search_text = search_text.lower().strip()
+    for item in parts_data:
 
-        search_words = search_text.split()
+        searchable_text = " ".join(
+            str(value) for value in item.values()
+        ).lower()
 
-        results = []
+        if search_text in searchable_text:
 
-        for row in rows:
+            results.append({
+                "source": "Sheet1",
+                "data": item
+            })
 
-            row_text = " ".join(
-                str(value).lower()
-                for value in row.values()
+    # -----------------------------------------------------
+    # SEARCH SHEET2
+    # -----------------------------------------------------
+
+    for item in tires_data:
+
+        searchable_text = " ".join(
+            str(value) for value in item.values()
+        ).lower()
+
+        if search_text in searchable_text:
+
+            results.append({
+                "source": "Sheet2",
+                "data": item
+            })
+
+    return results
+
+
+# =========================================================
+# FORMAT RESULT
+# =========================================================
+
+def format_results(results):
+
+    if not results:
+        return "Sorry, I couldn't find that item in our inventory."
+
+    message = "Here are the matching items:\n\n"
+
+    for result in results:
+
+        source = result["source"]
+        item = result["data"]
+
+        message += f"📦 Source: {source}\n"
+
+        # SKU
+        if "SKU" in item:
+            message += f"SKU: {item['SKU']}\n"
+
+        # Brand
+        if "Brand" in item:
+            message += f"Brand: {item['Brand']}\n"
+
+        # Tire Size
+        if "Tire Size" in item:
+            message += f"Tire Size: {item['Tire Size']}\n"
+
+        # Product / Part Name
+        if "Product Name" in item:
+            message += f"Product: {item['Product Name']}\n"
+
+        if "Part Name" in item:
+            message += f"Part: {item['Part Name']}\n"
+
+        # Quantity
+        if "Quantity" in item:
+            message += f"Quantity: {item['Quantity']}\n"
+
+        # Price
+        if "Price" in item:
+            message += f"Price: ₱{item['Price']}\n"
+
+        # Condition
+        if "Condition" in item:
+            message += f"Condition: {item['Condition']}\n"
+
+        # Vehicle Compatibility
+        if "Vehicle Compatibility" in item:
+            message += (
+                f"Vehicle Compatibility: "
+                f"{item['Vehicle Compatibility']}\n"
             )
 
-            if all(
-                word in row_text
-                for word in search_words
-            ):
-                results.append(row)
+        # Description
+        if "Description" in item:
+            message += f"Description: {item['Description']}\n"
 
-        if not results:
+        message += "\n"
 
-            return (
-                "❌ Sorry, I couldn't find a matching car part.\n\n"
-                "Please try something like:\n"
-                "• Toyota Vios brake pads\n"
-                "• Honda Civic air filter\n"
-                "• Toyota Vios oil filter"
-            )
-
-        response = "🔧 Car Parts Found:\n\n"
-
-        for row in results[:5]:
-
-            response += "--------------------\n"
-
-            response += f"Part: {row.get('Part Name', '')}\n"
-            response += f"Brand: {row.get('Brand', '')}\n"
-            response += f"Vehicle: {row.get('Vehicle', '')}\n"
-            response += f"Year: {row.get('Year', '')}\n"
-            response += f"Price: ₱{row.get('Price', '')}\n"
-            response += f"Stock: {row.get('Stock', '')}\n"
-
-        response += (
-            "\nWould you like to order this part?"
-        )
-
-        return response
-
-    except Exception as e:
-
-        print("Google Sheets error:", e)
-
-        return (
-            "⚠️ Sorry, I'm having trouble accessing "
-            "our inventory right now."
-        )
+    return message
 
 
 # =========================================================
-# HOME PAGE
-# =========================================================
-
-@app.route("/")
-def home():
-
-    return "Car Parts Messenger Bot is running!"
-
-
-# =========================================================
-# META WEBHOOK
-# =========================================================
-
-@app.route("/webhook", methods=["GET", "POST"])
-def webhook():
-
-    # -----------------------------------------
-    # META WEBHOOK VERIFICATION
-    # -----------------------------------------
-
-    if request.method == "GET":
-
-        mode = request.args.get("hub.mode")
-
-        token = request.args.get(
-            "hub.verify_token"
-        )
-
-        challenge = request.args.get(
-            "hub.challenge"
-        )
-
-        if (
-            mode == "subscribe"
-            and token == VERIFY_TOKEN
-        ):
-
-            print(
-                "Webhook verified successfully!"
-            )
-
-            return challenge, 200
-
-        return "Verification failed", 403
-
-
-    # -----------------------------------------
-    # RECEIVE MESSENGER EVENT
-    # -----------------------------------------
-
-    data = request.get_json()
-
-    print("Received:", data)
-
-    for entry in data.get("entry", []):
-
-        for event in entry.get("messaging", []):
-
-            # Ignore messages sent by the Page itself
-            if event.get("message", {}).get("is_echo"):
-
-                continue
-
-            sender_id = event.get(
-                "sender", {}
-            ).get("id")
-
-            message = event.get(
-                "message", {}
-            )
-
-            text = message.get("text")
-
-
-            if sender_id and text:
-
-                print(
-                    "Customer message:",
-                    text
-                )
-
-                reply = search_parts(text)
-
-                send_message(
-                    sender_id,
-                    reply
-                )
-
-    return "EVENT_RECEIVED", 200
-
-
-# =========================================================
-# SEND MESSAGE TO FACEBOOK
-# =========================================================
-
-def send_message(
-    recipient_id,
-    text
-):
-
-    url = (
-        "https://graph.facebook.com/"
-        "v23.0/me/messages"
-    )
-
-    payload = {
-
-        "recipient": {
-            "id": recipient_id
-        },
-
-        "message": {
-            "text": text
-        },
-
-        "access_token": PAGE_ACCESS_TOKEN
-    }
-
-    response = requests.post(
-        url,
-        json=payload
-    )
-
-    print(
-        "Send response:",
-        response.status_code,
-        response.text
-    )
-
-
-# =========================================================
-# START SERVER
+# TEST SEARCH
 # =========================================================
 
 if __name__ == "__main__":
 
-    port = int(
-        os.environ.get(
-            "PORT",
-            10000
-        )
-    )
+    print("\n===================================")
+    print("CAR PARTS INVENTORY SEARCH")
+    print("===================================\n")
 
-    app.run(
-        host="0.0.0.0",
-        port=port
-    )
+    while True:
+
+        search_text = input(
+            "Enter product, tire size, brand, SKU, or vehicle "
+            "(type 'exit' to quit): "
+        )
+
+        if search_text.lower() == "exit":
+            break
+
+        results = search_inventory(search_text)
+
+        print("\n-----------------------------------")
+        print(format_results(results))
+        print("-----------------------------------\n")
