@@ -1,180 +1,73 @@
-import gspread
-from google.oauth2.service_account import Credentials
+def search_parts(search_text):
 
-# =========================================================
-# CONFIGURATION
-# =========================================================
+    try:
 
-GOOGLE_SHEET_NAME = "car_parts"
-SHEET1_NAME = "Sheet1"
-SHEET2_NAME = "Sheet2"
-SERVICE_ACCOUNT_FILE = "service_account.json"
+        print("Connecting to Google Sheets...")
+        print("Spreadsheet ID:", GOOGLE_SHEET_ID)
 
-# =========================================================
-# GOOGLE SHEETS CONNECTION
-# =========================================================
+        sheet = get_google_sheet()
 
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets.readonly"
-]
+        print("Google Sheet connected successfully!")
 
-credentials = Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE,
-    scopes=SCOPES
-)
+        rows = sheet.get_all_records()
 
-client = gspread.authorize(credentials)
+        print("Rows loaded:", len(rows))
 
-spreadsheet = client.open(GOOGLE_SHEET_NAME)
+        search_text = search_text.lower().strip()
 
-sheet1 = spreadsheet.worksheet(SHEET1_NAME)
-sheet2 = spreadsheet.worksheet(SHEET2_NAME)
+        search_words = search_text.split()
 
-# =========================================================
-# LOAD DATA FROM BOTH SHEETS
-# =========================================================
+        results = []
 
-parts_data = sheet1.get_all_records()
-tires_data = sheet2.get_all_records()
+        for row in rows:
 
-print(f"Sheet1 records: {len(parts_data)}")
-print(f"Sheet2 records: {len(tires_data)}")
-
-
-# =========================================================
-# SEARCH INVENTORY
-# =========================================================
-
-def search_inventory(search_text):
-
-    search_text = search_text.lower().strip()
-
-    results = []
-
-    # -----------------------------------------------------
-    # SEARCH SHEET1
-    # -----------------------------------------------------
-
-    for item in parts_data:
-
-        searchable_text = " ".join(
-            str(value) for value in item.values()
-        ).lower()
-
-        if search_text in searchable_text:
-
-            results.append({
-                "source": "Sheet1",
-                "data": item
-            })
-
-    # -----------------------------------------------------
-    # SEARCH SHEET2
-    # -----------------------------------------------------
-
-    for item in tires_data:
-
-        searchable_text = " ".join(
-            str(value) for value in item.values()
-        ).lower()
-
-        if search_text in searchable_text:
-
-            results.append({
-                "source": "Sheet2",
-                "data": item
-            })
-
-    return results
-
-
-# =========================================================
-# FORMAT RESULT
-# =========================================================
-
-def format_results(results):
-
-    if not results:
-        return "Sorry, I couldn't find that item in our inventory."
-
-    message = "Here are the matching items:\n\n"
-
-    for result in results:
-
-        source = result["source"]
-        item = result["data"]
-
-        message += f"📦 Source: {source}\n"
-
-        # SKU
-        if "SKU" in item:
-            message += f"SKU: {item['SKU']}\n"
-
-        # Brand
-        if "Brand" in item:
-            message += f"Brand: {item['Brand']}\n"
-
-        # Tire Size
-        if "Tire Size" in item:
-            message += f"Tire Size: {item['Tire Size']}\n"
-
-        # Product / Part Name
-        if "Product Name" in item:
-            message += f"Product: {item['Product Name']}\n"
-
-        if "Part Name" in item:
-            message += f"Part: {item['Part Name']}\n"
-
-        # Quantity
-        if "Quantity" in item:
-            message += f"Quantity: {item['Quantity']}\n"
-
-        # Price
-        if "Price" in item:
-            message += f"Price: ₱{item['Price']}\n"
-
-        # Condition
-        if "Condition" in item:
-            message += f"Condition: {item['Condition']}\n"
-
-        # Vehicle Compatibility
-        if "Vehicle Compatibility" in item:
-            message += (
-                f"Vehicle Compatibility: "
-                f"{item['Vehicle Compatibility']}\n"
+            row_text = " ".join(
+                str(value).lower()
+                for value in row.values()
             )
 
-        # Description
-        if "Description" in item:
-            message += f"Description: {item['Description']}\n"
+            if all(
+                word in row_text
+                for word in search_words
+            ):
+                results.append(row)
 
-        message += "\n"
+        print("Matching results:", len(results))
 
-    return message
+        if not results:
 
+            return (
+                "❌ Sorry, I couldn't find a matching car part.\n\n"
+                "Please try something like:\n"
+                "• Toyota Vios brake pads\n"
+                "• Honda Civic air filter\n"
+                "• Toyota Vios oil filter"
+            )
 
-# =========================================================
-# TEST SEARCH
-# =========================================================
+        response = "🔧 Car Parts Found:\n\n"
 
-if __name__ == "__main__":
+        for row in results[:5]:
 
-    print("\n===================================")
-    print("CAR PARTS INVENTORY SEARCH")
-    print("===================================\n")
+            response += "--------------------\n"
+            response += f"Part: {row.get('Part Name', '')}\n"
+            response += f"Brand: {row.get('Brand', '')}\n"
+            response += f"Vehicle: {row.get('Vehicle', '')}\n"
+            response += f"Year: {row.get('Year', '')}\n"
+            response += f"Price: ₱{row.get('Price', '')}\n"
+            response += f"Stock: {row.get('Stock', '')}\n"
 
-    while True:
+        response += "\nWould you like to order this part?"
 
-        search_text = input(
-            "Enter product, tire size, brand, SKU, or vehicle "
-            "(type 'exit' to quit): "
+        return response
+
+    except Exception as e:
+
+        print("================================")
+        print("GOOGLE SHEETS ERROR:")
+        print(repr(e))
+        print("================================")
+
+        return (
+            "⚠️ Sorry, I'm having trouble accessing "
+            "our inventory right now."
         )
-
-        if search_text.lower() == "exit":
-            break
-
-        results = search_inventory(search_text)
-
-        print("\n-----------------------------------")
-        print(format_results(results))
-        print("-----------------------------------\n")
