@@ -1,73 +1,124 @@
-def search_parts(search_text):
+import gspread
+from google.oauth2.service_account import Credentials
 
-    try:
+# ==============================
+# CONFIG
+# ==============================
 
-        print("Connecting to Google Sheets...")
-        print("Spreadsheet ID:", GOOGLE_SHEET_ID)
+GOOGLE_SHEET_NAME = "car_parts"
+SERVICE_ACCOUNT_FILE = "service_account.json"
 
-        sheet = get_google_sheet()
+# ==============================
+# CONNECT TO GOOGLE SHEETS
+# ==============================
 
-        print("Google Sheet connected successfully!")
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets.readonly"
+]
 
-        rows = sheet.get_all_records()
+credentials = Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE,
+    scopes=SCOPES
+)
 
-        print("Rows loaded:", len(rows))
+client = gspread.authorize(credentials)
 
-        search_text = search_text.lower().strip()
+spreadsheet = client.open(GOOGLE_SHEET_NAME)
 
-        search_words = search_text.split()
+# ==============================
+# OPEN BOTH SHEETS
+# ==============================
 
-        results = []
+sheet1 = spreadsheet.worksheet("Sheet1")
+sheet2 = spreadsheet.worksheet("Sheet2")
 
-        for row in rows:
+# ==============================
+# READ BOTH SHEETS
+# ==============================
 
-            row_text = " ".join(
-                str(value).lower()
-                for value in row.values()
-            )
+sheet1_data = sheet1.get_all_records()
+sheet2_data = sheet2.get_all_records()
 
-            if all(
-                word in row_text
-                for word in search_words
-            ):
-                results.append(row)
+print("Sheet1 rows:", len(sheet1_data))
+print("Sheet2 rows:", len(sheet2_data))
 
-        print("Matching results:", len(results))
+# ==============================
+# SEARCH BOTH SHEETS
+# ==============================
 
-        if not results:
+def search_inventory(search_text):
 
-            return (
-                "❌ Sorry, I couldn't find a matching car part.\n\n"
-                "Please try something like:\n"
-                "• Toyota Vios brake pads\n"
-                "• Honda Civic air filter\n"
-                "• Toyota Vios oil filter"
-            )
+    search_text = search_text.lower().strip()
 
-        response = "🔧 Car Parts Found:\n\n"
+    results = []
 
-        for row in results[:5]:
+    # Search Sheet1
+    for row in sheet1_data:
 
-            response += "--------------------\n"
-            response += f"Part: {row.get('Part Name', '')}\n"
-            response += f"Brand: {row.get('Brand', '')}\n"
-            response += f"Vehicle: {row.get('Vehicle', '')}\n"
-            response += f"Year: {row.get('Year', '')}\n"
-            response += f"Price: ₱{row.get('Price', '')}\n"
-            response += f"Stock: {row.get('Stock', '')}\n"
-
-        response += "\nWould you like to order this part?"
-
-        return response
-
-    except Exception as e:
-
-        print("================================")
-        print("GOOGLE SHEETS ERROR:")
-        print(repr(e))
-        print("================================")
-
-        return (
-            "⚠️ Sorry, I'm having trouble accessing "
-            "our inventory right now."
+        text = " ".join(
+            str(value).lower()
+            for value in row.values()
         )
+
+        if search_text in text:
+            results.append({
+                "sheet": "Sheet1",
+                "data": row
+            })
+
+    # Search Sheet2
+    for row in sheet2_data:
+
+        text = " ".join(
+            str(value).lower()
+            for value in row.values()
+        )
+
+        if search_text in text:
+            results.append({
+                "sheet": "Sheet2",
+                "data": row
+            })
+
+    return results
+
+
+# ==============================
+# DISPLAY RESULTS
+# ==============================
+
+def display_results(results):
+
+    if not results:
+        print("\n❌ No matching inventory found.")
+        return
+
+    print("\n✅ MATCHING INVENTORY:\n")
+
+    for result in results:
+
+        print("Source:", result["sheet"])
+
+        for key, value in result["data"].items():
+            print(f"{key}: {value}")
+
+        print("-----------------------------")
+
+
+# ==============================
+# TEST
+# ==============================
+
+while True:
+
+    search = input(
+        "\nSearch inventory "
+        "(type exit to quit): "
+    )
+
+    if search.lower() == "exit":
+        break
+
+    results = search_inventory(search)
+
+    display_results(results)
