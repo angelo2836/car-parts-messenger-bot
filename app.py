@@ -1,4 +1,3 @@
-
 import os
 import requests
 import pandas as pd
@@ -16,8 +15,10 @@ def load_parts():
     try:
         df = pd.read_excel(EXCEL_FILE)
         df = df.fillna("")
+
         print("Excel loaded successfully!")
         print(df)
+
         return df
 
     except Exception as e:
@@ -33,31 +34,26 @@ def search_parts(search_text):
         return "Sorry, our car-parts database is currently unavailable."
 
     search_text = search_text.lower().strip()
-
-    # Split customer message into individual words
     search_words = search_text.split()
 
     results = []
 
     for _, row in df.iterrows():
 
-        # Combine all information from the row
         row_text = " ".join(
             str(value).lower()
             for value in row.values
         )
 
-        # Match all words somewhere in the row
         if all(word in row_text for word in search_words):
             results.append(row)
 
     if not results:
         return (
-            "🔍 Sorry, I couldn't find a matching car part.\n\n"
+            "Sorry, I couldn't find a matching car part.\n\n"
             "Please try sending the part name, vehicle brand, "
             "model, or year.\n\n"
-            "Example:\n"
-            "Toyota Vios brake pads"
+            "Example: Toyota Vios brake pads"
         )
 
     response = "🔧 Car Parts Found:\n\n"
@@ -65,13 +61,12 @@ def search_parts(search_text):
     for row in results[:5]:
 
         response += "--------------------\n"
-
-        response += f"🔩 Part: {row['Part Name']}\n"
-        response += f"🚗 Brand: {row['Brand']}\n"
-        response += f"📋 Vehicle: {row['Vehicle']}\n"
-        response += f"📅 Year: {row['Year']}\n"
-        response += f"💰 Price: ₱{row['Price']}\n"
-        response += f"📦 Stock: {row['Stock']}\n"
+        response += f"Part: {row['Part Name']}\n"
+        response += f"Brand: {row['Brand']}\n"
+        response += f"Vehicle: {row['Vehicle']}\n"
+        response += f"Year: {row['Year']}\n"
+        response += f"Price: ₱{row['Price']}\n"
+        response += f"Stock: {row['Stock']}\n"
 
     response += "\nWould you like to order this part?"
 
@@ -86,10 +81,7 @@ def home():
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
 
-    # =========================
-    # META WEBHOOK VERIFICATION
-    # =========================
-
+    # Meta webhook verification
     if request.method == "GET":
 
         mode = request.args.get("hub.mode")
@@ -100,13 +92,9 @@ def webhook():
             print("Webhook verified successfully!")
             return challenge, 200
 
-        print("Webhook verification failed!")
         return "Verification failed", 403
 
-    # =========================
-    # RECEIVE MESSENGER MESSAGE
-    # =========================
-
+    # Receive Messenger event
     data = request.get_json()
 
     print("Received:", data)
@@ -115,8 +103,7 @@ def webhook():
 
         for event in entry.get("messaging", []):
 
-            # IMPORTANT:
-            # Ignore messages sent by our own Page
+            # Ignore messages sent by the Facebook Page itself
             if event.get("message", {}).get("is_echo"):
                 continue
 
@@ -129,7 +116,7 @@ def webhook():
 
                 print("Customer message:", text)
 
-                # Search Excel database
+                # Search Excel
                 reply = search_parts(text)
 
                 # Send reply
