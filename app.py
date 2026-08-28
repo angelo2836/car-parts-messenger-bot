@@ -1,3 +1,4 @@
+```python
 import os
 import requests
 import pandas as pd
@@ -11,14 +12,12 @@ PAGE_ACCESS_TOKEN = os.environ.get("PAGE_ACCESS_TOKEN")
 EXCEL_FILE = "car_parts.xlsx"
 
 
-# Load car parts from Excel
 def load_parts():
     try:
         df = pd.read_excel(EXCEL_FILE)
-
-        # Convert all columns to text
         df = df.fillna("")
-
+        print("Excel loaded successfully!")
+        print(df)
         return df
 
     except Exception as e:
@@ -26,7 +25,6 @@ def load_parts():
         return pd.DataFrame()
 
 
-# Search the Excel file
 def search_parts(search_text):
 
     df = load_parts()
@@ -34,21 +32,32 @@ def search_parts(search_text):
     if df.empty:
         return "Sorry, our car-parts database is currently unavailable."
 
-    search_text = search_text.lower()
+    search_text = search_text.lower().strip()
+
+    # Split customer message into individual words
+    search_words = search_text.split()
 
     results = []
 
     for _, row in df.iterrows():
 
-        row_text = " ".join(str(value).lower() for value in row.values)
+        # Combine all information from the row
+        row_text = " ".join(
+            str(value).lower()
+            for value in row.values
+        )
 
-        if search_text in row_text:
+        # Match all words somewhere in the row
+        if all(word in row_text for word in search_words):
             results.append(row)
 
     if not results:
         return (
-            "Sorry, I couldn't find a matching car part. "
-            "Please send the vehicle brand, model, year, or part name."
+            "🔍 Sorry, I couldn't find a matching car part.\n\n"
+            "Please try sending the part name, vehicle brand, "
+            "model, or year.\n\n"
+            "Example:\n"
+            "Toyota Vios brake pads"
         )
 
     response = "🔧 Car Parts Found:\n\n"
@@ -57,11 +66,14 @@ def search_parts(search_text):
 
         response += "--------------------\n"
 
-        for column in df.columns:
-            value = row[column]
+        response += f"🔩 Part: {row['Part Name']}\n"
+        response += f"🚗 Brand: {row['Brand']}\n"
+        response += f"📋 Vehicle: {row['Vehicle']}\n"
+        response += f"📅 Year: {row['Year']}\n"
+        response += f"💰 Price: ₱{row['Price']}\n"
+        response += f"📦 Stock: {row['Stock']}\n"
 
-            if str(value).strip():
-                response += f"{column}: {value}\n"
+    response += "\nWould you like to order this part?"
 
     return response
 
@@ -74,7 +86,10 @@ def home():
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
 
-    # Meta webhook verification
+    # =========================
+    # META WEBHOOK VERIFICATION
+    # =========================
+
     if request.method == "GET":
 
         mode = request.args.get("hub.mode")
@@ -82,11 +97,16 @@ def webhook():
         challenge = request.args.get("hub.challenge")
 
         if mode == "subscribe" and token == VERIFY_TOKEN:
+            print("Webhook verified successfully!")
             return challenge, 200
 
+        print("Webhook verification failed!")
         return "Verification failed", 403
 
-    # Receive Messenger event
+    # =========================
+    # RECEIVE MESSENGER MESSAGE
+    # =========================
+
     data = request.get_json()
 
     print("Received:", data)
@@ -95,6 +115,11 @@ def webhook():
 
         for event in entry.get("messaging", []):
 
+            # IMPORTANT:
+            # Ignore messages sent by our own Page
+            if event.get("message", {}).get("is_echo"):
+                continue
+
             sender_id = event.get("sender", {}).get("id")
 
             message = event.get("message", {})
@@ -102,13 +127,16 @@ def webhook():
 
             if sender_id and text:
 
-                print("Customer:", text)
+                print("Customer message:", text)
 
                 # Search Excel database
                 reply = search_parts(text)
 
-                # Send result back to Messenger
-                send_message(sender_id, reply)
+                # Send reply
+                send_message(
+                    sender_id,
+                    reply
+                )
 
     return "EVENT_RECEIVED", 200
 
@@ -127,7 +155,10 @@ def send_message(recipient_id, text):
         "access_token": PAGE_ACCESS_TOKEN
     }
 
-    response = requests.post(url, json=payload)
+    response = requests.post(
+        url,
+        json=payload
+    )
 
     print(
         "Send response:",
@@ -138,7 +169,12 @@ def send_message(recipient_id, text):
 
 if __name__ == "__main__":
 
+    port = int(
+        os.environ.get("PORT", 10000)
+    )
+
     app.run(
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000))
+        port=port
     )
+```
